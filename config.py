@@ -1,0 +1,1 @@
+DB_PATH = "mssql+pyodbc://Andra:passwd123@localhost/ProductTracker?driver=ODBC+Driver+17+for+SQL+Server"

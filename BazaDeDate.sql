@@ -1,0 +1,33 @@
+IF DB_ID('ProductTracker') IS NOT NULL
+BEGIN
+    ALTER DATABASE ProductTracker SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE ProductTracker;
+END
+GO
+
+
+CREATE DATABASE ProductTracker;
+GO
+
+
+USE ProductTracker;
+GO
+
+
+CREATE TABLE products (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    name NVARCHAR(255) NOT NULL,
+    site NVARCHAR(100) NOT NULL,
+    url NVARCHAR(500) NOT NULL UNIQUE
+);
+GO
+
+
+CREATE TABLE price_history (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    product_id INT NOT NULL,
+    price FLOAT NOT NULL,
+    timestamp DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+GO
