@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import urllib.parse
-from db_manager import insert_product, insert_price  # asigură-te că ai acest fișier
+from db_manager import insert_product, insert_price  
 
 def search_cel(query, max_results=5):
     encoded_query = urllib.parse.quote_plus(query)
@@ -36,7 +36,7 @@ def search_cel(query, max_results=5):
         print(f" Eroare la scraping CEL.ro: {e}")
         return []
 
-# rulare directă
+
 if __name__ == "__main__":
     query = input(" Cauta pe CEL.ro: ").strip()
     results = search_cel(query)

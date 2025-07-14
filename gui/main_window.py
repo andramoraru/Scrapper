@@ -1,11 +1,14 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QMessageBox, QScrollArea, QFrame
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout,
+    QMessageBox, QScrollArea, QFrame, QComboBox
+)
+from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
 from scrapper_emag import search_emag_products
 from scraper_cel import search_cel
 from db_manager import insert_product, insert_price
 from gui.price_history_window import PriceHistoryWindow
-
+from urllib.parse import urlparse
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -41,33 +44,30 @@ class MainWindow(QWidget):
         self.setLayout(self.layout)
 
     def add_product_card(self, product, source_color):
-         card = QFrame()
-         card.setFrameShape(QFrame.StyledPanel)
-         card.setStyleSheet("background-color: #f7f7f7; border: 1px solid #ccc; border-radius: 6px; padding: 10px;")
-         layout = QVBoxLayout()
+        card = QFrame()
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setStyleSheet("background-color: #f7f7f7; border: 1px solid #ccc; border-radius: 6px; padding: 10px;")
+        layout = QVBoxLayout()
 
-         title = QLabel(f"<b>{product['name']}</b>")
-         title.setWordWrap(True)
-         title.setFont(QFont("Arial", 11))
-         layout.addWidget(title)
+        title = QLabel(f"<b>{product['name']}</b>")
+        title.setWordWrap(True)
+        title.setFont(QFont("Arial", 11))
+        layout.addWidget(title)
 
-         price = QLabel(f"<span style='color: green; font-size: 14px;'>{product['price']} RON</span>")
-         layout.addWidget(price)
+        price = QLabel(f"<span style='color: green; font-size: 14px;'>{product['price']} RON</span>")
+        layout.addWidget(price)
 
-         url = product['url']
-         link_label = QLabel(f"<a href='{url}'>{url}</a>")
-         link_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-         link_label.setOpenExternalLinks(True)
-         
-         layout.addWidget(link_label)
+        url = product['url']
+        link = QLabel(f"<a href='{url}'>{url}</a>")
+        link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        link.setOpenExternalLinks(True)
+        layout.addWidget(link)
 
+        source = QLabel(f"Sursa: <span style='color:{source_color}'>{product['site']}</span>")
+        layout.addWidget(source)
 
-         source = QLabel(f"Sursa: <span style='color:{source_color}'>{product['site']}</span>")
-         layout.addWidget(source)
-
-         card.setLayout(layout)
-         self.result_layout.addWidget(card)
-
+        card.setLayout(layout)
+        self.result_layout.addWidget(card)
 
     def search_products(self):
         query = self.input.text().strip()
@@ -75,7 +75,6 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "Eroare", "Te rog introdu un produs.")
             return
 
-        # Curatare rezultate anterioare
         for i in reversed(range(self.result_layout.count())):
             widget_to_remove = self.result_layout.itemAt(i).widget()
             if widget_to_remove:
@@ -96,12 +95,11 @@ class MainWindow(QWidget):
             self.add_product_card(p, "#1565c0")  # albastru
 
         if not products:
-            warning = QLabel("⚠️ Niciun produs găsit.")
+            warning = QLabel("Niciun produs gasit.")
             self.result_layout.addWidget(warning)
             return
 
         for p in products:
-            from urllib.parse import urlparse
             domain = urlparse(p['url']).netloc
             insert_product(p['name'], domain, p['url'])
             insert_price(p['url'], p['price'])
