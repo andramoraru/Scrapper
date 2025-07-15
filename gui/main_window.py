@@ -1,109 +1,63 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout,
-    QMessageBox, QScrollArea, QFrame, QComboBox
-)
-from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QStackedWidget
+from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtCore import Qt
-from scrapper_emag import search_emag_products
-from scraper_cel import search_cel
-from db_manager import insert_product, insert_price
-from gui.price_history_window import PriceHistoryWindow
-from urllib.parse import urlparse
+from gui.products_page import ProductsPage
+from gui.forums_page import ForumsPage
 
-class MainWindow(QWidget):
+class AppMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Product Tracker - Compara Preturi")
-        self.resize(900, 700)
-        self.setup_ui()
+        self.setWindowTitle("Pricy App - Compara Preturi si Forumuri")
+        self.resize(1000, 700)
+        self.central = QStackedWidget()
+        self.setCentralWidget(self.central)
 
-    def setup_ui(self):
-        self.layout = QVBoxLayout()
+        self.products_page = ProductsPage(self.show_welcome_screen)
+        self.forums_page = ForumsPage(self.show_welcome_screen)
 
-        self.input = QLineEdit()
-        self.input.setPlaceholderText("Cauta produs (ex: iphone 13)...")
-        self.input.setFont(QFont("Arial", 12))
-        self.layout.addWidget(self.input)
 
-        self.search_btn = QPushButton("Cauta produs")
-        self.search_btn.clicked.connect(self.search_products)
-        self.layout.addWidget(self.search_btn)
+        self.welcome_widget = self.create_welcome_screen()
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.result_container = QWidget()
-        self.result_layout = QVBoxLayout()
-        self.result_container.setLayout(self.result_layout)
-        self.scroll.setWidget(self.result_container)
-        self.layout.addWidget(self.scroll)
+        self.central.addWidget(self.welcome_widget)   # index 0
+        self.central.addWidget(self.products_page)    # index 1
+        self.central.addWidget(self.forums_page)      # index 2
 
-        self.btn_view_history = QPushButton("Vezi istoric preturi")
-        self.btn_view_history.clicked.connect(self.show_price_history)
-        self.layout.addWidget(self.btn_view_history)
+    def show_welcome_screen(self):
+        self.central.setCurrentIndex(0)
 
-        self.setLayout(self.layout)
+    def show_products_page(self):
+        self.central.setCurrentIndex(1)
 
-    def add_product_card(self, product, source_color):
-        card = QFrame()
-        card.setFrameShape(QFrame.StyledPanel)
-        card.setStyleSheet("background-color: #f7f7f7; border: 1px solid #ccc; border-radius: 6px; padding: 10px;")
+    def show_forums_page(self):
+        self.central.setCurrentIndex(2)
+
+    def create_welcome_screen(self):
+        widget = QWidget()
         layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignCenter)
 
-        title = QLabel(f"<b>{product['name']}</b>")
-        title.setWordWrap(True)
-        title.setFont(QFont("Arial", 11))
+        logo = QLabel()
+        pixmap = QPixmap("assets/logo.png")
+        pixmap = pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        logo.setPixmap(pixmap)
+        logo.setAlignment(Qt.AlignCenter)
+        layout.addWidget(logo)
+
+        title = QLabel("Bine ai venit în aplicatia Pricy")
+        title.setFont(QFont("Arial", 20, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        price = QLabel(f"<span style='color: green; font-size: 14px;'>{product['price']} RON</span>")
-        layout.addWidget(price)
+        btn_products = QPushButton("Cauta produse si compara preturi")
+        btn_products.setMinimumHeight(40)
+        btn_products.clicked.connect(self.show_products_page)
+        layout.addWidget(btn_products)
 
-        url = product['url']
-        link = QLabel(f"<a href='{url}'>{url}</a>")
-        link.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        link.setOpenExternalLinks(True)
-        layout.addWidget(link)
+        btn_forums = QPushButton("Acceseaza forumuri (TPU, Stack Overflow)")
+        btn_forums.setMinimumHeight(40)
+        btn_forums.clicked.connect(self.show_forums_page)
+        layout.addWidget(btn_forums)
 
-        source = QLabel(f"Sursa: <span style='color:{source_color}'>{product['site']}</span>")
-        layout.addWidget(source)
-
-        card.setLayout(layout)
-        self.result_layout.addWidget(card)
-
-    def search_products(self):
-        query = self.input.text().strip()
-        if not query:
-            QMessageBox.warning(self, "Eroare", "Te rog introdu un produs.")
-            return
-
-        for i in reversed(range(self.result_layout.count())):
-            widget_to_remove = self.result_layout.itemAt(i).widget()
-            if widget_to_remove:
-                widget_to_remove.setParent(None)
-
-        products = []
-
-        emag = search_emag_products(query)
-        for p in emag:
-            p["site"] = "eMAG"
-            products.append(p)
-            self.add_product_card(p, "#c62828")  # rosu
-
-        cel = search_cel(query)
-        for p in cel:
-            p["site"] = "CEL"
-            products.append(p)
-            self.add_product_card(p, "#1565c0")  # albastru
-
-        if not products:
-            warning = QLabel("Niciun produs gasit.")
-            self.result_layout.addWidget(warning)
-            return
-
-        for p in products:
-            domain = urlparse(p['url']).netloc
-            insert_product(p['name'], domain, p['url'])
-            insert_price(p['url'], p['price'])
-
-    def show_price_history(self):
-        self.history_window = PriceHistoryWindow()
-        self.history_window.show()
+        widget.setLayout(layout)
+        widget.setStyleSheet("background-color: #e3f2fd;")
+        return widget

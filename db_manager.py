@@ -12,17 +12,27 @@ def insert_product(name, site, url):
     finally:
         conn.close()
 
-def insert_price(url, price):
+def insert_price(url, new_price):
     conn = get_connection()
     cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT id FROM products WHERE url = ?", url)
-        row = cursor.fetchone()
-        if row:
-            product_id = row[0]
-            cursor.execute("""
-                INSERT INTO price_history (product_id, price) VALUES (?, ?)
-            """, product_id, price)
-            conn.commit()
-    finally:
+
+    cursor.execute("""
+        SELECT TOP 1 ph.price
+        FROM price_history ph
+        JOIN products p ON p.id = ph.product_id
+        WHERE p.url = ?
+        ORDER BY ph.timestamp DESC
+    """, (url,))
+    row = cursor.fetchone()
+    if row and row[0] == new_price:
         conn.close()
+        return  #salvez numai pentru un nou pret in baza de date, astfel se salveaza numai la schimbari
+
+    cursor.execute("SELECT id FROM products WHERE url = ?", (url,))
+    product = cursor.fetchone()
+    if product:
+        cursor.execute("INSERT INTO price_history (product_id, price, timestamp) VALUES (?, ?, GETDATE())",
+                       (product[0], new_price))
+        conn.commit()
+
+    conn.close()
