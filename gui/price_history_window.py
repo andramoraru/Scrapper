@@ -47,12 +47,19 @@ class PriceHistoryWindow(QWidget):
         self.load_data()
 
     def normalize_url(self, url: str) -> str:
-        if url.startswith("http://http") or url.startswith("https://https"):
-            return url[url.find("http", 1):]
-        elif url.startswith("http://") or url.startswith("https://"):
-            return url
-        else:
-            return "https://" + url
+        url = url.strip()
+
+        if "http://" in url[5:] or "https://" in url[8:]:
+             last_http = url.rfind("http://")
+             last_https = url.rfind("https://")
+             last_idx = max(last_http, last_https)
+             return url[last_idx:]
+
+        if url.startswith("http://") or url.startswith("https://"):
+             return url
+
+        return "https://" + url
+
 
     def load_data(self):
         self.output.clear()

@@ -6,7 +6,7 @@ from config import get_connection
 class PriceChartWindow(QWidget):
     def __init__(self, product_id, product_name):
         super().__init__()
-        self.setWindowTitle(f"Evoluție preț: {product_name}")
+        self.setWindowTitle(f"Evoluție pret: {product_name}")
         self.product_id = product_id
         self.setup_ui()
 
@@ -29,10 +29,10 @@ class PriceChartWindow(QWidget):
         if data:
             prices, timestamps = zip(*data)
             self.ax.plot(timestamps, prices, marker='o')
-            self.ax.set_title("Evoluție preț în timp")
-            self.ax.set_xlabel("Dată")
-            self.ax.set_ylabel("Preț (RON)")
+            self.ax.set_title("Evoluție pret în timp")
+            self.ax.set_xlabel("Data")
+            self.ax.set_ylabel("Pret (RON)")
             self.ax.tick_params(axis='x', rotation=45)
         else:
-            self.ax.set_title("Fără date disponibile")
+            self.ax.set_title("Fara date disponibile")
         self.canvas.draw()
