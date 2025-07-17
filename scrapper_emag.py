@@ -5,9 +5,16 @@ from db_manager import insert_product, insert_price
 def search_emag_products(query, max_results=5):
     encoded_query = urllib.parse.quote_plus(query)
     search_url = f"https://www.emag.ro/search/{encoded_query}"
+    headers = {
+            "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/114.0.0.0 Safari/537.36"
+            )
+    }
 
     try:
-        response = requests.get(search_url, timeout=10)
+        response = requests.get(search_url,headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "lxml")
 

@@ -1,24 +1,50 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QFrame, QFileDialog, QHBoxLayout
+import re
+import sys
+import requests
+import requests_cache
+from io import BytesIO
+from urllib.parse import urlparse
+from difflib import SequenceMatcher
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
+    QScrollArea, QFrame, QHBoxLayout,QCompleter
+)
 from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtCore import Qt
+import json, os
+
+requests_cache.install_cache('http_cache', expire_after=3600)
+
 from scrapper_emag import search_emag_products
 from scraper_cel import search_cel
-from db_manager import insert_product, insert_price
-from urllib.parse import urlparse
-import os
-import requests
-from io import BytesIO
+from db_manager import (
+    product_exists, get_last_price,
+    insert_product, insert_price
+)
+
+HISTORY_FILE = "search_history.json"
+MAX_HISTORY = 20
+
 
 class ProductsPage(QWidget):
+    MAX_RESULTS_PER_SITE = 10
+    MATCH_THRESHOLD = 0.5
+
     def __init__(self, go_back_callback):
         super().__init__()
         self.go_back_callback = go_back_callback
-        self.uploaded_image_path = None
         self.setup_ui()
 
     def setup_ui(self):
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignTop)
+
+        if os.path.exists(HISTORY_FILE):
+            history = json.load(open(HISTORY_FILE, 'r', encoding='utf-8'))
+        else:
+            history = []
+        completer = QCompleter(history)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Cauta produs (ex: iphone 13)...")
@@ -26,7 +52,6 @@ class ProductsPage(QWidget):
         layout.addWidget(self.search_input)
 
         btn_row = QHBoxLayout()
-
         self.search_btn = QPushButton("Cauta produs")
         self.search_btn.clicked.connect(self.search_products)
         btn_row.addWidget(self.search_btn)
@@ -52,8 +77,47 @@ class ProductsPage(QWidget):
         self.setLayout(layout)
         self.setStyleSheet("background-color: #f1f8e9;")
 
-    def normalize_name(self, name):
-        return ''.join(c.lower() for c in name if c.isalnum())
+    def clean_name(self, name):
+        name = name.lower()
+        name = re.sub(r"[^\w\s]", "", name)
+        name = re.sub(r"\s+", " ", name)
+        remove_words = ['negru', 'alb', 'gri', 'cu tva', 'la reducere', 'în stoc']
+        for w in remove_words:
+            name = name.replace(w, '')
+        return name.strip()
+
+    def similar(self, a, b):
+        return SequenceMatcher(None, self.clean_name(a), self.clean_name(b)).ratio()
+
+    def find_matching_pairs(self, emag_list, cel_list, threshold=None):
+        if threshold is None:
+            threshold = self.MATCH_THRESHOLD
+        pairs = []
+        used_cel = set()
+        for e in emag_list:
+            best_score, best_idx = 0, -1
+            for idx, c in enumerate(cel_list):
+                if idx in used_cel:
+                    continue
+                score = self.similar(e['name'], c['name'])
+                if score > best_score:
+                    best_score, best_idx = score, idx
+            if best_score >= threshold:
+                pairs.append((e, cel_list[best_idx]))
+                used_cel.add(best_idx)
+        return pairs
+
+    def save_query_to_history(self, query):
+        if os.path.exists(HISTORY_FILE):
+            history = json.load(open(HISTORY_FILE, 'r', encoding='utf-8'))
+        else:
+            history = []
+        if query in history:
+            history.remove(query)
+        history.insert(0, query)
+        history = history[:MAX_HISTORY]
+        with open(HISTORY_FILE, 'a', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
 
     def search_products(self):
         query = self.search_input.text().strip()
@@ -61,99 +125,87 @@ class ProductsPage(QWidget):
             return
 
         for i in reversed(range(self.result_layout.count())):
-            widget_to_remove = self.result_layout.itemAt(i).widget()
-            if widget_to_remove:
-                widget_to_remove.setParent(None)
+            w = self.result_layout.itemAt(i).widget()
+            if w:
+                w.setParent(None)
 
-        emag = search_emag_products(query)
-        cel = search_cel(query)
+        try:
+            emag = search_emag_products(query, self.MAX_RESULTS_PER_SITE)
+            cel = search_cel(query, self.MAX_RESULTS_PER_SITE)
+        except TypeError:
+            emag = search_emag_products(query)
+            cel = search_cel(query)
 
-        for p in emag:
-            p["site"] = "eMAG"
-        for p in cel:
-            p["site"] = "CEL"
+        for p in emag: p['site'] = 'eMAG'
+        for p in cel: p['site'] = 'CEL'
 
-        normalized_emag = {self.normalize_name(p['name']): p for p in emag}
-        normalized_cel = {self.normalize_name(p['name']): p for p in cel}
+        pairs = self.find_matching_pairs(emag, cel)
+        for e, c in pairs:
+            self.add_comparison_card(e, c)
 
-        all_keys = set(normalized_emag.keys()) | set(normalized_cel.keys())
+        for prod in emag + cel:
+            color = '#c62828' if prod['site']=='eMAG' else '#1565c0'
+            self.add_product_card(prod, color)
 
-        for key in all_keys:
-            p_emag = normalized_emag.get(key)
-            p_cel = normalized_cel.get(key)
-
-            if p_emag and p_cel:
-                self.add_comparison_card(p_emag, p_cel)
-            elif p_emag:
-                self.add_product_card(p_emag, "#c62828")
-            elif p_cel:
-                self.add_product_card(p_cel, "#1565c0")
-
-            for p in filter(None, [p_emag, p_cel]):
-                domain = urlparse(p['url']).netloc
-                insert_product(p['name'], domain, p['url'])
-                insert_price(p['url'], p['price'])
+        for prod in emag + cel:
+            url = prod['url']
+            domain = urlparse(url).netloc
+            if not product_exists(url):
+                insert_product(prod['name'], domain, url)
+                insert_price(url, prod['price'])
+            else:
+                last = get_last_price(url)
+                if last is None or prod['price'] != last:
+                    insert_price(url, prod['price'])
 
     def add_product_card(self, product, source_color):
         card = QFrame()
         card.setFrameShape(QFrame.StyledPanel)
-        card.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 6px; padding: 10px;")
+        card.setStyleSheet(
+            "background-color: white; border:1px solid #ccc;"
+            "border-radius:6px; padding:10px;"
+        )
         layout = QHBoxLayout()
-
-        image_label = QLabel()
-        image_label.setFixedSize(100, 100)
-
-        pixmap = QPixmap("assets/default_product.png")
-        if "image" in product and product["image"]:
+        image_label = QLabel(); image_label.setFixedSize(100,100)
+        pix = QPixmap("assets/default_product.png")
+        if product.get('image'):
             try:
-                response = requests.get(product["image"], timeout=5)
-                if response.status_code == 200:
-                    img_data = response.content
-                    pixmap.loadFromData(img_data)
-            except Exception as e:
-                print(f"Nu s-a putut încărca imaginea: {e}")
-
-        pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        image_label.setPixmap(pixmap)
+                r = requests.get(product['image'], timeout=5)
+                if r.status_code==200:
+                    pix.loadFromData(r.content)
+            except: pass
+        pix = pix.scaled(100,100,Qt.KeepAspectRatio,Qt.SmoothTransformation)
+        image_label.setPixmap(pix)
         layout.addWidget(image_label)
-
-        info_layout = QVBoxLayout()
-
+        info = QVBoxLayout()
         title = QLabel(f"<b>{product['name']}</b>")
-        title.setWordWrap(True)
-        title.setFont(QFont("Arial", 11))
-        info_layout.addWidget(title)
-
-        price = QLabel(f"<span style='color: green; font-size: 14px;'>{product['price']} RON</span>")
-        info_layout.addWidget(price)
-
-        url = product['url']
-        link = QLabel(f"<a href='{url}'>{url}</a>")
+        title.setWordWrap(True); title.setFont(QFont("Arial",11))
+        info.addWidget(title)
+        price = QLabel(f"<span style='color:green;font-size:14px;'>{product['price']} RON</span>")
+        info.addWidget(price)
+        link = QLabel(f"<a href='{product['url']}'>{product['url']}</a>")
         link.setTextInteractionFlags(Qt.TextBrowserInteraction)
         link.setOpenExternalLinks(True)
-        info_layout.addWidget(link)
-
-        source = QLabel(f"Sursa: <span style='color:{source_color}'>{product['site']}</span>")
-        info_layout.addWidget(source)
-
-        layout.addLayout(info_layout)
+        info.addWidget(link)
+        src = QLabel(f"Sursa: <span style='color:{source_color}'>{product['site']}</span>")
+        info.addWidget(src)
+        layout.addLayout(info)
         card.setLayout(layout)
         self.result_layout.addWidget(card)
 
     def add_comparison_card(self, prod1, prod2):
-        from gui.price_comparison_window import PriceComparisonWindow
-        card = QFrame()
+        card = QFrame(); card.setFrameShape(QFrame.StyledPanel)
+        card.setStyleSheet(
+            "background-color:#e3f2fd; border:1px solid #90caf9;"
+            "border-radius:6px; padding:10px;"
+        )
         layout = QVBoxLayout()
-        name_label = QLabel(f"<b>{prod1['name']}</b>")
-        name_label.setFont(QFont("Arial", 11))
-        compare_btn = QPushButton("Compara preturi")
-        compare_btn.setStyleSheet("background-color: #00796b; color: white;")
-        compare_btn.clicked.connect(lambda: self.open_comparison(prod1, prod2))
-
-        layout.addWidget(name_label)
-        layout.addWidget(compare_btn)
+        name = QLabel(f"<b>{prod1['name']}</b>"); name.setFont(QFont("Arial",11))
+        btn = QPushButton("Compară prețuri")
+        btn.setStyleSheet("background-color:#00796b;color:white;")
+        btn.clicked.connect(lambda: self.open_comparison(prod1, prod2))
+        layout.addWidget(name); layout.addWidget(btn)
         card.setLayout(layout)
-        card.setStyleSheet("background-color: #e3f2fd; border: 1px solid #90caf9; padding: 10px;")
         self.result_layout.addWidget(card)
 
     def open_comparison(self, prod1, prod2):
@@ -165,3 +217,10 @@ class ProductsPage(QWidget):
         from gui.price_history_window import PriceHistoryWindow
         self.history_window = PriceHistoryWindow()
         self.history_window.show()
+
+if __name__ == "__main__":
+    from PyQt5.QtWidgets import QApplication
+    app = QApplication(sys.argv)
+    w = ProductsPage(lambda: app.quit())
+    w.show()
+    sys.exit(app.exec_())

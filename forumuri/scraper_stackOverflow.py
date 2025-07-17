@@ -9,7 +9,6 @@ def search_stackoverflow_duckduckgo(query, max_results=5):
     }
 
     response = requests.post(url, headers=headers)  
-    response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
 
     results = []

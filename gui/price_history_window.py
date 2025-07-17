@@ -104,9 +104,6 @@ class PriceHistoryWindow(QWidget):
                 f"<a href='chart:///{prod_id}|{name}' "
                 "style='font-weight:bold; color:#222; text-decoration:underline;'>"
                 " Vezi grafic</a><br>"
-                f"<a href='compare:///{prod_id}|{name}' "
-                "style='font-weight:bold; color:#00695c; text-decoration:underline;'>"
-                " Compara preturi</a><br><hr>"
             )
 
         self.output.setHtml("".join(html_parts))
